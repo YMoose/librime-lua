@@ -1,8 +1,10 @@
 #include "lib/lua_templates.h"
+#include "lib/lua.h"
 #include "lua_gears.h"
 #include <atomic>
 #include <vector>
 #include <sstream>
+#include <rime/service.h>
 
 namespace rime {
 
@@ -187,6 +189,12 @@ an<Translation> LuaFilter::Apply(
 }
 
 LuaFilter::~LuaFilter() {
+  if (check_lua_shutting_down()) {
+    // final teardown (RimeFinalize): the engine and its members are being
+    // destroyed; calling the script's fini() callback now would run Lua
+    // code against freed rime objects.
+    return;
+  }
   if (fini_) {
     auto r = lua_->void_call<an<LuaObj>, an<LuaObj>>(fini_, env_);
     if (!r.ok()) {
@@ -216,6 +224,9 @@ an<Translation> LuaTranslator::Query(const string& input,
 }
 
 LuaTranslator::~LuaTranslator() {
+  if (check_lua_shutting_down()) {
+    return;
+  }
   if (fini_) {
     auto r = lua_->void_call<an<LuaObj>, an<LuaObj>>(fini_, env_);
     if (!r.ok()) {
@@ -245,6 +256,9 @@ bool LuaSegmentor::Proceed(Segmentation* segmentation) {
 }
 
 LuaSegmentor::~LuaSegmentor() {
+  if (check_lua_shutting_down()) {
+    return;
+  }
   if (fini_) {
     auto r = lua_->void_call<an<LuaObj>, an<LuaObj>>(fini_, env_);
     if (!r.ok()) {
@@ -278,6 +292,9 @@ ProcessResult LuaProcessor::ProcessKeyEvent(const KeyEvent& key_event) {
 }
 
 LuaProcessor::~LuaProcessor() {
+  if (check_lua_shutting_down()) {
+    return;
+  }
   if (fini_) {
     auto r = lua_->void_call<an<LuaObj>, an<LuaObj>>(fini_, env_);
     if (!r.ok()) {

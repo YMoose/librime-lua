@@ -113,6 +113,13 @@ private:
 
 public:
   LuaComponent(an<Lua> lua) : lua_(lua) {};
+  ~LuaComponent() {
+    // The destructor body runs before the an<Lua> member releases the last
+    // reference: latch the teardown flag here so that Lua::~Lua() (lib/,
+    // rime-free) still detects teardown via the plain data flag, e.g. when
+    // Registry::Clear() destroys components while no session ever existed.
+    check_lua_shutting_down();
+  }
   T* Create(const Ticket &a) {
     Ticket t(a.engine, a.name_space, a.name_space);
     return new T(t, lua_.get());

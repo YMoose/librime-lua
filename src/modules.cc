@@ -4,9 +4,31 @@
 #include <rime_api.h>
 #include <rime/service.h>
 #include "lib/lua_templates.h"
+#include "lib/lua.h"
 #include "lua_gears.h"
 
 void types_init(lua_State *L);
+
+// --- teardown state --------------------------------------------------
+// The rime integration layer owns the shutdown decision; the lib/ layer
+// (src/lib) only observes the resulting flag and stays rime-free.
+std::atomic<bool> lua_shutting_down{false};
+
+bool check_lua_shutting_down() {
+  if (lua_shutting_down.load()) {
+    return true;
+  }
+  auto& service = rime::Service::instance();
+  // Service::disabled() is "!started_ || deployer_.IsMaintenanceMode()".
+  // Only treat it as final teardown when the service is stopped (!started_),
+  // not when background maintenance is running while the service is active.
+  if (service.disabled() && !service.deployer().IsMaintenanceMode()) {
+    lua_shutting_down.store(true);
+    return true;
+  }
+  return false;
+}
+// ---------------------------------------------------------------------
 
 static bool file_exists(const char *fname) noexcept {
     FILE * const fp = fopen(fname, "r");
@@ -93,6 +115,11 @@ static void lua_init(lua_State *L) {
 static void rime_lua_initialize() {
   using namespace rime;
 
+  // A host may finalize and initialize rime again in the same process
+  // (e.g. an IME service being stopped and restarted); start that new
+  // lifetime with the teardown flag cleared.
+  lua_shutting_down = false;
+
   LOG(INFO) << "registering components from module 'lua'.";
   Registry& r = Registry::instance();
 
@@ -106,6 +133,10 @@ static void rime_lua_initialize() {
 }
 
 static void rime_lua_finalize() {
+  // The service is down (RimeFinalize); make sure the Lua state is never
+  // closed afterwards, so that __gc finalizers cannot run against rime
+  // objects destroyed during teardown.
+  lua_shutting_down = true;
 }
 
 RIME_REGISTER_MODULE(lua)

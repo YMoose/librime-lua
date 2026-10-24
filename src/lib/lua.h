@@ -4,9 +4,27 @@
 #include <memory>
 #include <functional>
 #include <string>
+#include <atomic>
 #include "result.h"
 
 struct lua_State;
+
+// Teardown signal, set by the *rime integration layer* (modules.cc) once the
+// rime service is being finalized.  The lib/ layer only *observes* this flag
+// (skips lua_close / GC / registry unref); it never decides on its own, so
+// src/lib stays free of any rime dependency (upstream keeps this directory
+// rime-free, see hchunhui/librime-lua).
+#if defined(__GNUC__)
+#define LUA_TEARDOWN_LOCAL __attribute__((visibility("hidden")))
+#else
+#define LUA_TEARDOWN_LOCAL
+#endif
+extern LUA_TEARDOWN_LOCAL std::atomic<bool> lua_shutting_down;
+
+// Latches lua_shutting_down and returns true when the rime service has been
+// stopped for good (!started_ && not in background maintenance), i.e. during
+// RimeFinalize().  Defined in the integration layer (modules.cc).
+LUA_TEARDOWN_LOCAL bool check_lua_shutting_down();
 
 class LuaObj {
 public:

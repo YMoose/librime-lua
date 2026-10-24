@@ -229,6 +229,14 @@ Lua::Lua() {
 
 Lua::~Lua() {
   closing_ = true;   // lua_close 内部会跑 GC；此后禁止任何重入的 GC 调用
+  // The integration layer latches lua_shutting_down (module finalize /
+  // component destructors) before the last an<Lua> reference is dropped,
+  // so a plain data check is enough here; lua_close() would otherwise run
+  // __gc finalizers against rime objects already destroyed by RimeFinalize.
+  if (lua_shutting_down.load()) {
+    // Leak the Lua state instead; this only happens at process teardown.
+    return;
+  }
   lua_close(L_);
 }
 
@@ -269,14 +277,14 @@ void Lua::gc() {
   // 关闭 Lua 状态时（Lua::~Lua -> lua_close）GC 已在运行：此处再调就是对正在跑的 GC
   // 的重入调用，Lua 5.3 的 GC 状态机会活锁（进程 100% CPU、lua_close 永不返回）。
   // 守卫放在这里而不是各调用点——所有 GC 驱动都经过这两个函数（单一咽喉点）。
-  if (closing_) {
+  if (closing_ || lua_shutting_down.load()) {
     return;
   }
   lua_gc(L_, LUA_GCCOLLECT, 0);
 }
 
 void Lua::gc_step(int kb) {
-  if (closing_) {
+  if (closing_ || lua_shutting_down.load()) {
     return;
   }
   lua_gc(L_, LUA_GCSTEP, kb);
@@ -288,6 +296,9 @@ LuaObj::LuaObj(lua_State *L, int i) : L_(L) {
 }
 
 LuaObj::~LuaObj() {
+  if (lua_shutting_down.load()) {
+    return;
+  }
   luaL_unref(L_, LUA_REGISTRYINDEX, id_);
 }
 

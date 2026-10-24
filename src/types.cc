@@ -1469,6 +1469,8 @@ static int raw_connect(lua_State *L) {
   T & t = LuaType<T &>::todata(L, 1);
   an<LuaObj> o = LuaObj::todata(L, 2);
   auto f = [lua, o](I... i) {
+    if (check_lua_shutting_down())
+      return;
     auto r = lua->void_call<an<LuaObj>, Context *>(o, i...);
     if (!r.ok()) {
                  auto e = r.get_err();
