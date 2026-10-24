@@ -11,6 +11,11 @@ target_link_libraries(rime-lua-test
   ${rime_dict_library}
   ${rime_gears_library}
   ${GTEST_LIBRARIES})
+if(BUILD_SHARED_LIBS)
+  # mirroring librime's own test/CMakeLists.txt: dllimport when linking
+  # against the rime shared library on Windows
+  target_compile_definitions(rime-lua-test PRIVATE RIME_IMPORTS)
+endif()
 
 set(rime_lua_test_executable ${EXECUTABLE_OUTPUT_PATH}/rime-lua-test${ext})
 add_test(NAME rime-lua-test COMMAND ${rime_lua_test_executable})
